@@ -2,6 +2,7 @@
 
 var quantile = require('simple-statistics/src/quantile');
 var mean = require('simple-statistics/src/mean');
+var min = require('simple-statistics/src/min');
 var max = require('simple-statistics/src/max');
 var numericSort = require('simple-statistics/src/numeric_sort');
 var chunk = require('simple-statistics/src/chunk');
@@ -33,20 +34,25 @@ module.exports = function(options,x,y,data){
   var levels = keys(xrecs);
   var maxlength = max(values(xrecs).map(length));
   var xscale = scale([0,maxlength],[3,7]);
+  
+  var ys = data.map(y);
+  var ydomain = [min(ys), max(ys)];
+  var yscale = scale(ydomain, [0, MAXWIDTH-1]);
+  var yaxis = plotAxis(ydomain, yscale)(zeroArray(' ',MAXWIDTH));
 
   return levels.reduce( function(acc,level){
     var yvals = xrecs[level];
     var canvas = zeroArray(' ', MAXWIDTH * xscale(xrecs[level].length));
-    var plot = single(opts, level, canvas, xrecs[level]); 
+    var plot = single(opts, level, canvas, yscale, xrecs[level]); 
     return acc.concat(
-      zeroArray(' ', MAXWIDTH).join(''),
+      [zeroArray(' ', MAXWIDTH).join('')],
       chunk(plot,MAXWIDTH).map(join(''))
     );
-  }, [] );
+  }, [yaxis.join('')] );
 
 }
 
-function single(options,title,canvas,vector){
+function single(options,title,canvas,yscale,vector){
 
   var qs = quantile(vector, QUANTILES);
   var d_range = range(qs);
@@ -64,8 +70,6 @@ function single(options,title,canvas,vector){
   console.log('outliers %o', d_outliers);
   */
 
-  var yscale = scale(d_range, [0, MAXWIDTH-1]);
-
   var plotters = [ 
       plotWhiskers( d_whiskers.map(yscale), d_iqr.map(yscale) ),
       plotIQR( d_iqr.map(yscale) ),
@@ -76,6 +80,22 @@ function single(options,title,canvas,vector){
   ]
 
   return plotters.reduce( flip(call), canvas);
+}
+
+function plotAxis(r,fn){
+  var nticks = 10;
+  var tickwidth = MAXWIDTH / nticks;
+  var valwidth = (r[1] - r[0]) / nticks;
+
+  return function(canvas){
+    for (var i=0; i<MAXWIDTH; ++i){
+      canvas[i] = '.';
+    }
+    for (var i=0; i<nticks; ++i){
+      plotTextAt('|'+ Math.round(r[0]+(i*valwidth)), Math.floor(i*tickwidth), 0)(canvas)
+    }
+    return canvas;
+  }
 }
 
 
