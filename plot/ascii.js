@@ -2,17 +2,22 @@
 
 var quantile = require('simple-statistics/src/quantile');
 var mean = require('simple-statistics/src/mean');
+var max = require('simple-statistics/src/max');
 var numericSort = require('simple-statistics/src/numeric_sort');
+var chunk = require('simple-statistics/src/chunk');
 
-
+var length = require('ramda/src/length');
+var values = require('ramda/src/values');
+var keys = require('ramda/src/keys');
 var pluck = require('ramda/src/pluck');
 var join = require('ramda/src/join');
 var merge = require('ramda/src/merge');
-var reduce = require('ramda/src/reduce');
 var flip = require('ramda/src/flip');
 var call = require('ramda/src/call');
 var head = require('ramda/src/head');
 var last = require('ramda/src/last');
+
+var nest = require('../nest');
 
 var QUANTILES = [0,0.02,0.09,0.25,0.5,0.75,0.91,0.98,1];
 var MAXWIDTH = 80;
@@ -24,12 +29,21 @@ var DEFAULTS = {
 module.exports = function(options,x,y,data){
   var opts = merge(DEFAULTS,options);
  
-  /* temporary */
-  var vector = pluck('y',data);
-  var canvas = zeroArray(' ',MAXWIDTH * 5);
+  var xrecs = nest(x,y)(data)
+  var levels = keys(xrecs);
+  var maxlength = max(values(xrecs).map(length));
+  var xscale = scale([0,maxlength],[3,7]);
 
-  var plot = single(opts,'TESTING',canvas,vector);
-  return segment(MAXWIDTH,plot).map(join(''));
+  return levels.reduce( function(acc,level){
+    var yvals = xrecs[level];
+    var canvas = zeroArray(' ', MAXWIDTH * xscale(xrecs[level].length));
+    var plot = single(opts, level, canvas, xrecs[level]); 
+    return acc.concat(
+      zeroArray(' ', MAXWIDTH).join(''),
+      chunk(plot,MAXWIDTH).map(join(''))
+    );
+  }, [] );
+
 }
 
 function single(options,title,canvas,vector){
@@ -56,11 +70,12 @@ function single(options,title,canvas,vector){
       plotWhiskers( d_whiskers.map(yscale), d_iqr.map(yscale) ),
       plotIQR( d_iqr.map(yscale) ),
       plotMedian( yscale(d_median) ),
+      plotTextAt( title, d_iqr.map(yscale)[0]+1, 0),
       plotMean( yscale(d_mean) ),
       plotOutliers( numericSort(d_outliers.map(yscale)) )
   ]
 
-  return reduce( flip(call), canvas , plotters);
+  return plotters.reduce( flip(call), canvas);
 }
 
 
@@ -96,6 +111,15 @@ function plotIQR(r){
       }
     }
 
+    return canvas;
+  }
+}
+
+function plotTextAt(s,col,line){
+  return function(canvas){
+    for (var i=0; i<s.length && i<MAXWIDTH; ++i){
+      canvas[ (line*MAXWIDTH) + col + i ] = s[i];
+    }
     return canvas;
   }
 }
@@ -192,15 +216,6 @@ function zeroArray(v,n){
   var ret = Array(n);
   for (var i=0;i<n;++i){
     ret[i] = v;
-  }
-  return ret;
-}
-
-function segment(n,list){
-  var ret = [];
-  if (n < 1) throw new TypeError('first parameter must be positive integer');
-  for (var i=0;i<Math.ceil(list.length/n);++i){
-    ret.push( list.slice(i*n,(i*n)+n) );
   }
   return ret;
 }
