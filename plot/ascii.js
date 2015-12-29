@@ -22,24 +22,23 @@ var nest = require('../nest');
 
 var QUANTILES = [0,0.02,0.09,0.25,0.5,0.75,0.91,0.98,1];
 var MAXWIDTH = 80;
-var MAXHEIGHT = 40;
 var DEFAULTS = {
   whiskers: tukeyWhiskers
 }
 
-module.exports = function(options,x,y,data){
+module.exports = function ascii(options,x,y,data){
   var opts = merge(DEFAULTS,options);
  
   var xrecs = nest(x,y)(data)
   var levels = keys(xrecs);
   var maxlength = max(values(xrecs).map(length));
-  var xscale = scale([0,maxlength],[3,7]);
+  var xscale = scale([0,maxlength],[5,9]);
   
   var ys = data.map(y);
   var ydomain = [min(ys), max(ys)];
   var yscale = scale(ydomain, [0, MAXWIDTH-1]);
   var yaxis = plotAxis(ydomain, yscale)(zeroArray(' ',MAXWIDTH));
-
+  
   return levels.reduce( function(acc,level){
     var yvals = xrecs[level];
     var canvas = zeroArray(' ', MAXWIDTH * xscale(xrecs[level].length));
@@ -52,15 +51,15 @@ module.exports = function(options,x,y,data){
 
 }
 
-function single(options,title,canvas,yscale,vector){
+function single(options,title,canvas,yscale,dim){
 
-  var qs = quantile(vector, QUANTILES);
+  var qs = quantile(dim, QUANTILES);
   var d_range = range(qs);
   var d_iqr = iqr(qs);
   var d_median = median(qs);
-  var d_whiskers = options.whiskers(qs,vector);
-  var d_outliers = outliers(d_whiskers,vector);
-  var d_mean = mean(vector);
+  var d_whiskers = options.whiskers(qs,dim);
+  var d_outliers = outliers(d_whiskers,dim);
+  var d_mean = mean(dim);
   
   /*
   console.log('qs %o', qs);
@@ -69,12 +68,15 @@ function single(options,title,canvas,yscale,vector){
   console.log('whiskers %o', d_whiskers);
   console.log('outliers %o', d_outliers);
   */
+  
+  var r_iqr = d_iqr.map(yscale);
 
   var plotters = [ 
-      plotWhiskers( d_whiskers.map(yscale), d_iqr.map(yscale) ),
+      plotWhiskers( d_whiskers.map(yscale), r_iqr ),
       plotIQR( d_iqr.map(yscale) ),
       plotMedian( yscale(d_median) ),
-      plotTextAt( title, d_iqr.map(yscale)[0]+1, 0),
+      plotTextAt( title, r_iqr[0]+1, 0),
+      plotTextAt( 'n='+dim.length, r_iqr[0]+1, 1), 
       plotMean( yscale(d_mean) ),
       plotOutliers( numericSort(d_outliers.map(yscale)) )
   ]
@@ -89,10 +91,10 @@ function plotAxis(r,fn){
 
   return function(canvas){
     for (var i=0; i<MAXWIDTH; ++i){
-      canvas[i] = '.';
+      canvas[i] = '-';
     }
     for (var i=0; i<nticks; ++i){
-      plotTextAt('|'+ Math.round(r[0]+(i*valwidth)), Math.floor(i*tickwidth), 0)(canvas)
+      plotTextAt('|'+ roundSigFig(r[0]+(i*valwidth),2), Math.floor(i*tickwidth), 0)(canvas)
     }
     return canvas;
   }
@@ -198,21 +200,21 @@ function iqr(qs){
   return [qs[mid-1], qs[mid+1]];
 }
 
-function outliers(whiskers,vector){
-  var below = vector.filter( lt(whiskers[0]) )
-    , above = vector.filter( gt(whiskers[1]) );
+function outliers(whiskers,dim){
+  var below = dim.filter( lt(whiskers[0]) )
+    , above = dim.filter( gt(whiskers[1]) );
   return below.concat(above);
 }
 
-function tukeyWhiskers(qs,vector){
+function tukeyWhiskers(qs,dim){
   var iq = iqr(qs)
     , lower = iq[0]
     , upper = iq[1]
     , iqdist = upper - lower
     , dist = iqdist * 1.5;
 
-  var vs_lower = vector.filter( gte(lower-dist) );
-  var vs_upper = vector.filter( lte(upper+dist) );
+  var vs_lower = dim.filter( gte(lower-dist) );
+  var vs_upper = dim.filter( lte(upper+dist) );
 
   /*
   console.log('tukey lower %o', lower-dist);
@@ -230,6 +232,12 @@ function scale(d,r){
   return function(n){
     return Math.round( ((n - d[0]) * factor) + r[0] );
   }
+}
+
+function roundSigFig(n,digits){
+  if (n==0) return n;
+  var mult = Math.pow(10, digits - Math.floor(Math.log(n)/Math.LN10) - 1);
+  return Math.round(n*mult)/mult;
 }
 
 function zeroArray(v,n){

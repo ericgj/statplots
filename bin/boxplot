@@ -5,7 +5,8 @@
 var program = require('commander');
 var d3 = require('d3-dsv');
 var prop = require('ramda/src/prop');
-var and = require('ramda/src/and');
+var allPass = require('ramda/src/allPass');
+var complement = require('ramda/src/complement');
 var T = require('ramda/src/T');
 
 var ascii = require('../plot/ascii');
@@ -14,15 +15,29 @@ var rangeOption = function(val){
   return val.split('..').map(Number);
 }
 
+var listOption = function(val){
+  return val.split(',').map(function(s){ return s.trim(); });
+}
+
 program.version('0.0.1')
        .option('-f, --format [type]', 'Input format [csv]', 'csv')
        .option('-o, --output [type]', 'Output format [ascii]', 'ascii')
        .option('-x, --x [name]',     'x (category) variable')
        .option('-y, --y [name]',     'y (numeric) variable')
-       .option('-r, --range [min]..[max]', 'y range', rangeOption)
+       .option('--yrange [min]..[max]', 'y range', rangeOption)
+       .option('--xs [level],[level]', 'include x levels', listOption)
+       .option('--not-xs [level],[level]', 'exclude x levels', listOption)
        .parse(process.argv);
 
 // TODO halt if no x or y given
+
+/*
+console.log('x: ' + program.x);
+console.log('y: ' + program.y);
+console.log('yrange: %j', program.yrange);
+console.log('xs: %j', program.xs);
+console.log('notXs: %j', program['notXs']);
+*/
 
 var parser = {
   'csv': d3.csv
@@ -47,8 +62,13 @@ function readInput(){
 function processInput(){
   var propx = prop(program.x);
   var propy = prop(program.y);
-  var dataFilter = and( scrub([propy]),
-                        program.range ? filterRange(program.range,propy) : T );
+  var dataFilter = allPass([ 
+                     scrub([propy]),
+                     program.yrange ? filterRange(program.yrange,propy) : T,
+                     program.xs     ? filterList(program.xs,propx)      : T,
+                     program['notXs'] ? 
+                       complement(filterList(program['notXs'],propx))   : T 
+                   ]);
   var data  = (
     parser.parse(inputChunks.join(''), 
                  coerce(program.x,program.y))
@@ -78,6 +98,14 @@ function filterRange(r,fn){
     return v >= r[0] && v <= r[1];
   }
 }
+
+function filterList(list,fn){
+  return function(rec){
+    var v = fn(rec);
+    return list.indexOf(v) >= 0;
+  }
+}
+
 
 // note this is needed to play nice with simple-statistics
 
