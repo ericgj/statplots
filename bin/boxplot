@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+
+'use strict';
+
+var program = require('commander');
+var d3 = require('d3-dsv');
+var prop = require('ramda/src/prop');
+var and = require('ramda/src/and');
+var T = require('ramda/src/T');
+
+var ascii = require('../plot/ascii');
+
+var rangeOption = function(val){
+  return val.split('..').map(Number);
+}
+
+program.version('0.0.1')
+       .option('-f, --format [type]', 'Input format [csv]', 'csv')
+       .option('-o, --output [type]', 'Output format [ascii]', 'ascii')
+       .option('-x, --x [name]',     'x (category) variable')
+       .option('-y, --y [name]',     'y (numeric) variable')
+       .option('-r, --range [min]..[max]', 'y range', rangeOption)
+       .parse(process.argv);
+
+// TODO halt if no x or y given
+
+var parser = {
+  'csv': d3.csv
+}[program.format];
+
+var plot = {
+  'ascii': ascii
+}[program.output];
+
+var inputChunks = [];
+
+process.stdin.on('readable', readInput);
+process.stdin.on('end', processInput);
+
+function readInput(){
+  var chunk = process.stdin.read();
+  if (chunk != null){
+    inputChunks.push(chunk);
+  }
+}
+
+function processInput(){
+  var propx = prop(program.x);
+  var propy = prop(program.y);
+  var dataFilter = and( scrub([propy]),
+                        program.range ? filterRange(program.range,propy) : T );
+  var data  = (
+    parser.parse(inputChunks.join(''), 
+                 coerce(program.x,program.y))
+          .filter(dataFilter)
+  );
+
+  var out = plot({}, propx, propy, data);
+  out.forEach( function(line){
+    process.stdout.write(line);
+    process.stdout.write("\n");
+  });
+}
+
+
+function coerce(x,y){
+  return function(d){
+    var ret = {};
+    ret[x] = d[x];
+    ret[y] = d[y].length == 0 ? undefined : +d[y] ;
+    return ret;
+  }
+}
+
+function filterRange(r,fn){
+  return function(rec){
+    var v = fn(rec);
+    return v >= r[0] && v <= r[1];
+  }
+}
+
+// note this is needed to play nice with simple-statistics
+
+function scrub(fns){
+  return function(rec){
+    return fns.every( function(fn){
+      var v = fn(rec);
+      return !( v === undefined || v === null || 
+                v === NaN || v === +Infinity || v === -Infinity );
+    });
+  }
+}
+
